@@ -24,29 +24,30 @@ import plotly.express as px
 
 network_df = pd.read_csv('outputs/network_df.csv', index_col=0)
 network_df['citations'] = network_df['citations'].fillna('')
+network_df['cited_by'] = network_df['cited_by'].fillna('')
 network_df['topic_id'] = network_df['topic_id'].astype(str)
 
 journal_ser = network_df.groupby('journal')['0'].count().sort_values(ascending=False)
 top_journals = list(journal_ser.index[:5])
 
-conn_list = list()
-conn_nodes = set()
-for i, row in network_df.iterrows():
-    citations = row['citations']
-    if len(citations) == 0:
-        citations_list = []
-    else:
-        citations_list = citations.split(',')
-        for cit in citations_list:
-            tgt_topic = network_df.iloc[int(cit)]['topic_id']
-            temp_dict = {
-                'data': {'source': str(i), 'target': cit}, 
-                'classes': tgt_topic,
-                'tgt_topic': tgt_topic,
-                'src_topic': i,
-                'locked': True
-            }
-        conn_list.append(temp_dict)
+# conn_list = list()
+# conn_nodes = set()
+# for i, row in network_df.iterrows():
+#     citations = row['citations']
+#     if len(citations) == 0:
+#         citations_list = []
+#     else:
+#         citations_list = citations.split(',')
+#         for cit in citations_list:
+#             tgt_topic = network_df.iloc[int(cit)]['topic_id']
+#             temp_dict = {
+#                 'data': {'source': str(i), 'target': cit},
+#                 'classes': tgt_topic,
+#                 'tgt_topic': tgt_topic,
+#                 'src_topic': i,
+#                 'locked': True
+#             }
+#         conn_list.append(temp_dict)
 
 
 def tsne_to_cyto(tsne_val):
@@ -87,6 +88,30 @@ def update_node_data(node_bools):
     return node_list_in
 
 
+def draw_edges():
+
+    conn_list_out = list()
+    for i, row in network_df.iterrows():
+        citations = row['cited_by']
+        if len(citations) == 0:
+            citations_list = []
+        else:
+            citations_list = citations.split(',')
+
+        for cit in citations_list:
+            tgt_topic = row['topic_id']
+            temp_dict = {
+                'data': {'source': cit, 'target': str(i)},
+                'classes': tgt_topic,
+                'tgt_topic': tgt_topic,
+                'src_topic': network_df.iloc[int(i)]['topic_id'],
+                'locked': True
+            }
+            conn_list_out.append(temp_dict)
+
+    return conn_list_out
+
+
 def filter_node_data(min_conns=5, journals=[], date_filter=None):
     # TODO - explore making this faster
     node_bools = np.array([1] * len(network_df))
@@ -103,7 +128,8 @@ def filter_node_data(min_conns=5, journals=[], date_filter=None):
 
 
 elm_list = node_list
-# elm_list += conn_list
+conn_list = draw_edges()
+elm_list += conn_list
 
 app = dash.Dash(__name__, external_stylesheets=[dbc.themes.BOOTSTRAP])
 
@@ -145,8 +171,8 @@ body_layout = dbc.Container([
                     elements=elm_list,
                     stylesheet=def_stylesheet,
                     minZoom=0.06,
-                )]
-            ),
+                )
+            ]),
             dbc.Row([
                 dcc.Markdown(id='node-data', children='Click on a node to see its details here')
             ]),
@@ -160,8 +186,8 @@ body_layout = dbc.Container([
                     options=[{'label': k, 'value': k} for k in range(21)],
                     value=1,
                     style={'width': '50px'}
-                )],
-            ),
+                )
+            ]),
             dbc.Badge("Journal(s) published:", color="info", className="mr-1"),
             dbc.FormGroup([
                 dcc.Dropdown(
@@ -170,8 +196,19 @@ body_layout = dbc.Container([
                     value=top_journals,
                     multi=True,
                     style={'width': '100%'}
-                )],
-            ),
+                ),
+            ]),
+            # dbc.Badge("Show citation connections:", color="info", className="mr-1"),
+            dbc.FormGroup([
+                dbc.Checkbox(
+                    id="show_edges_radio", className="form-check-input", checked=False,
+                ),
+                dbc.Label(
+                    "Show citation connections",
+                    html_for="show_edges_radio",
+                    className="form-check-label",
+                ),
+            ]),
         ], sm=12, md=4),
     ]),
 ])
@@ -181,9 +218,9 @@ app.layout = html.Div([body_layout])
 
 @app.callback(
     Output('core_19_cytoscape', 'elements'),
-    [Input('n_cites_dropdown', 'value'), Input('journals_dropdown', 'value')]
+    [Input('n_cites_dropdown', 'value'), Input('journals_dropdown', 'value'), Input('show_edges_radio', 'checked')]
 )
-def filter_nodes(usr_min_cites, usr_journals_list):
+def filter_nodes(usr_min_cites, usr_journals_list, show_edges):
 
     node_bools = filter_node_data(min_conns=usr_min_cites, journals=usr_journals_list, date_filter=None)
     node_list = update_node_data(node_bools)
