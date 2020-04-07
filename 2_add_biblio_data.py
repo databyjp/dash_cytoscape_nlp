@@ -74,11 +74,11 @@ network_df = lda_df.assign(citations=cite_links)
 network_df['citations'] = network_df['citations'].fillna('')
 network_df = network_df.assign(journal=journals)  
 network_df = network_df.assign(pub_date=pub_dates)
-network_df = network_df.assign(authors=authors)   
+network_df = network_df.assign(authors=authors)
 
-all_cites_str = ','.join(network_df['citations'].values)
-all_cites = [int(i) for i in all_cites_str.split(',') if len(i) > 0]
-network_df = network_df.assign(n_cites=[all_cites.count(i) for i in network_df.index])
+cited_by_list = [','.join(cited_by[str(i)]) for i in range(len(network_df))]
+network_df = network_df.assign(cited_by=cited_by_list)
+network_df = network_df.assign(n_cites=[len(i.split(',')) if len(i) > 0 else 0 for i in cited_by_list])
 
 for col in ['title', 'journal', 'pub_date', 'authors']:
     network_df[col] = network_df[col].fillna('No data')
