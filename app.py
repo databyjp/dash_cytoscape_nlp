@@ -88,7 +88,7 @@ def update_node_data(node_bools):
     return node_list_in
 
 
-def draw_edges():
+def draw_edges(node_bools=[]):
 
     conn_list_out = list()
     for i, row in network_df.iterrows():
@@ -128,8 +128,8 @@ def filter_node_data(min_conns=5, journals=[], date_filter=None):
 
 
 elm_list = node_list
-conn_list = draw_edges()
-elm_list += conn_list
+# conn_list = draw_edges()
+# elm_list += conn_list
 
 app = dash.Dash(__name__, external_stylesheets=[dbc.themes.BOOTSTRAP])
 
@@ -224,8 +224,17 @@ def filter_nodes(usr_min_cites, usr_journals_list, show_edges):
 
     node_bools = filter_node_data(min_conns=usr_min_cites, journals=usr_journals_list, date_filter=None)
     node_list = update_node_data(node_bools)
+    conn_list = []
 
-    return node_list
+    if show_edges:
+        conn_list = draw_edges(node_bools)
+    #     elm_list = node_list + conn_list
+    # else:
+    #     elm_list = node_list
+
+    elm_list = node_list + conn_list
+
+    return elm_list
 
 
 @app.callback(Output('node-data', 'children'),
