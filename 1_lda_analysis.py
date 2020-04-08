@@ -147,7 +147,7 @@ print('Number of documents: %d' % len(corpus))
 # ========== LDA - train our model with Gensim ==========
 logger.info(f'Training LDA model')
 # Set training parameters.
-num_topics = 10
+num_topics = 15
 chunksize = 2000
 passes = 20
 iterations = 400
@@ -176,10 +176,10 @@ top_topics = lda.top_topics(corpus) #, num_words=20)
 avg_topic_coherence = sum([t[1] for t in top_topics]) / num_topics
 print('Average topic coherence: %.4f.' % avg_topic_coherence)
 
+# ========== Visualise the data with pyLDAvis ==========
 from pprint import pprint
 pprint(top_topics)
 
-# ========== Visualise the data with pyLDAvis ==========
 import pyLDAvis.gensim
 import pyLDAvis
 
@@ -187,7 +187,7 @@ vis = pyLDAvis.gensim.prepare(lda, corpus, dictionary)
 with open('outputs/lda_vis.html', 'w') as f:
     pyLDAvis.save_html(vis, f)
 
-# ========== Visualise the data with plotly ==========
+# ========== T-SNE transform ==========
 lda_vals = list()
 for d in corpus:
     topics_tup = lda.get_document_topics(d)  # This should be a N by K matrix where N = corpus size, K = topics
@@ -196,15 +196,21 @@ for d in corpus:
         temp_dict[t[0]] = t[1]
     lda_vals.append(temp_dict)
 
+lda_val_df = pd.DataFrame(lda_vals)
+lda_arr = lda_val_df.values
 # for pplx in [20, 35, 50, 100, 200]:  # Test out different perplexity values
-for pplx in [55]:  # Test out different perplexity values
-    lda_df = pd.DataFrame(lda_vals)
-    lda_arr = deepcopy(lda_df.values)
-    tsne_embeds = TSNE(n_components=2, perplexity=pplx, n_iter=3000).fit_transform(lda_arr)
+lda_topics = {i[0]: i[1].split(' + ') for i in lda.print_topics(-1)}
 
-    topics_txt = [lda.show_topics()[i][1].replace(' + ', '<BR>') for i in range(num_topics)]
+for pplx in [40]:  # Test out different perplexity values
+
+    lda_df = deepcopy(lda_val_df)
+    tsne_embeds = TSNE(n_components=2, perplexity=pplx, n_iter=3000).fit_transform(lda_arr)
+    topics_txt = [lda_topics[i] for i in range(num_topics)]
+    topics_txt = [[j.split('*')[1].replace('"', '') for j in i] for i in topics_txt]
+    topics_txt = ['; '.join(i) for i in topics_txt]
+    # topics_txt = [lda.print_topics()[i][1].replace(' + ', '<BR>') for i in range(num_topics)]
     lda_df = lda_df.assign(topic_id=[str(lda_arr[i].argmax()) for i in range(len(lda_arr))])
-    lda_df = lda_df.assign(topic_txt=['<BR>' + topics_txt[lda_arr[i].argmax()] for i in range(len(lda_arr))])
+    lda_df = lda_df.assign(topic_txt=[topics_txt[lda_arr[i].argmax()] for i in range(len(lda_arr))])
     lda_df = lda_df.assign(topics=['Topic: ' + str(lda_arr[i].argmax()) for i in range(len(lda_arr))])
     lda_df = lda_df.assign(title=docs_titles)
     lda_df = lda_df.assign(filename=filenames)
@@ -213,9 +219,11 @@ for pplx in [55]:  # Test out different perplexity values
     # Visualise the t-SNE topics
     topic_ids = 'Topic: ' + lda_df['topic_id'].astype(str).values
     fig = px.scatter(lda_df, title='t-SNE test, perplexity: ' + str(pplx),
-                     x='x', y='y', color=topic_ids, color_discrete_sequence=px.colors.qualitative.Safe,
+                     x='x', y='y', color=topic_ids, color_discrete_sequence=px.colors.qualitative.Light24,
                      hover_name='title', hover_data=['topic_txt'], template='plotly_white')
     fig.show()
 
 lda.save('outputs/lda_model')
 lda_df.to_csv('outputs/lda_df.csv')
+with open('outputs/lda_topics.json', 'w') as f:
+    json.dump(lda_topics, f)

@@ -20,6 +20,7 @@ import dash_bootstrap_components as dbc
 import dash_core_components as dcc
 from dash.dependencies import Input, Output
 from copy import deepcopy
+import json
 import plotly.express as px
 
 network_df = pd.read_csv('outputs/network_df.csv', index_col=0)
@@ -27,27 +28,14 @@ network_df['citations'] = network_df['citations'].fillna('')
 network_df['cited_by'] = network_df['cited_by'].fillna('')
 network_df['topic_id'] = network_df['topic_id'].astype(str)
 
+with open('outputs/lda_topics.json', 'r') as f:
+    lda_topics = json.load(f)
+topics_txt = [lda_topics[str(i)] for i in range(len(lda_topics))]
+topics_txt = [[j.split('*')[1].replace('"', '') for j in i] for i in topics_txt]
+topics_txt = ['; '.join(i) for i in topics_txt]
+
 journal_ser = network_df.groupby('journal')['0'].count().sort_values(ascending=False)
 top_journals = list(journal_ser.index[:5])
-
-# conn_list = list()
-# conn_nodes = set()
-# for i, row in network_df.iterrows():
-#     citations = row['citations']
-#     if len(citations) == 0:
-#         citations_list = []
-#     else:
-#         citations_list = citations.split(',')
-#         for cit in citations_list:
-#             tgt_topic = network_df.iloc[int(cit)]['topic_id']
-#             temp_dict = {
-#                 'data': {'source': str(i), 'target': cit},
-#                 'classes': tgt_topic,
-#                 'tgt_topic': tgt_topic,
-#                 'src_topic': i,
-#                 'locked': True
-#             }
-#         conn_list.append(temp_dict)
 
 
 def tsne_to_cyto(tsne_val):
@@ -91,23 +79,25 @@ def update_node_data(node_bools):
 def draw_edges(node_bools=[]):
 
     conn_list_out = list()
-    for i, row in network_df.iterrows():
-        citations = row['cited_by']
-        if len(citations) == 0:
-            citations_list = []
-        else:
-            citations_list = citations.split(',')
 
-        for cit in citations_list:
-            tgt_topic = row['topic_id']
-            temp_dict = {
-                'data': {'source': cit, 'target': str(i)},
-                'classes': tgt_topic,
-                'tgt_topic': tgt_topic,
-                'src_topic': network_df.iloc[int(i)]['topic_id'],
-                'locked': True
-            }
-            conn_list_out.append(temp_dict)
+    for i, row in network_df.iterrows():
+        if node_bools[i] == 1:
+            citations = row['cited_by']
+            if len(citations) == 0:
+                citations_list = []
+            else:
+                citations_list = citations.split(',')
+
+            for cit in citations_list:
+                tgt_topic = row['topic_id']
+                temp_dict = {
+                    'data': {'source': cit, 'target': str(i)},
+                    'classes': tgt_topic,
+                    'tgt_topic': tgt_topic,
+                    'src_topic': network_df.iloc[int(i)]['topic_id'],
+                    'locked': True
+                }
+                conn_list_out.append(temp_dict)
 
     return conn_list_out
 
@@ -133,11 +123,13 @@ elm_list = node_list
 
 app = dash.Dash(__name__, external_stylesheets=[dbc.themes.BOOTSTRAP])
 
-col_swatch = px.colors.qualitative.Safe
+server = app.server
+
+col_swatch = px.colors.qualitative.Dark24
 def_stylesheet = [
     {
         'selector': '.' + str(i),
-        # 'style': {'background-color': col_swatch[i], 'line-color': col_swatch[i]},
+        # 'style': {'background-color': col_swatch[i]},
         'style': {'background-color': col_swatch[i], 'line-color': col_swatch[i]}
     } for i in range(len(network_df['topic_id'].unique()))
 ]
@@ -149,17 +141,66 @@ def_stylesheet += [
         'selector': 'node[highlight = 0]',
         'style': {'background-opacity': 0.15}
     },
+    {'selector': 'edge', 'style': {'width': 1, 'curve-style': 'bezier'}},
 ]
+
+navbar = dbc.NavbarSimple(
+    brand="Plotly dash-cytoscape demo - CORD-19 LDA analysis output",
+    brand_href="#",
+    color="dark",
+    dark=True,
+)
+
+topics_html = list()
+for topic_html in [html.Span([str(i) + ': ' + topics_txt[i]], style={'color': col_swatch[i]}) for i in range(len(topics_txt))]:
+    topics_html.append(topic_html)
+    topics_html.append(html.Br())
 
 body_layout = dbc.Container([
     dbc.Row([
         dcc.Markdown(
             """
             ### CORD-19 Data Explorer Dashboard
-            
-            This is a demo dashboard - built using CORD-19 data TO BE COMPLETED.  
             """
         )
+    ]),
+    dbc.Row([
+        dbc.Col([
+            dcc.Markdown(
+                f"""
+                -----
+                ##### Data:
+                -----
+                For this demonstration, {len(network_df)} papers from the CORD-19 dataset* were categorised into 
+                {len(network_df.topic_id.unique())} topics using
+                [LDA](https://en.wikipedia.org/wiki/Latent_Dirichlet_allocation) analysis.
+
+                Each topic is shown in different color on the citation map, as shown on the right.
+                """
+            )
+        ], sm=12, md=4),
+        dbc.Col([
+            dcc.Markdown(
+                """
+                -----
+                ##### Topics:
+                -----
+                """
+            ),
+            html.Div(topics_html, style={'fontSize': 11, 'height': '100px', 'overflow': 'auto'}),
+        ], sm=12, md=8)
+    ]),
+    dbc.Row([
+        dcc.Markdown(
+            """
+            -----
+            ##### Filter / Explore node data
+            Use these filters to highlight papers with:
+            * certain numbers of citations by other papers in this collection, and
+            * by journal of publication
+            Click 'Show citation connections' to see visualisations of citations, or to hide them for brevity
+            -----
+            """),
     ]),
     dbc.Row([
         dbc.Col([
@@ -178,13 +219,12 @@ body_layout = dbc.Container([
             ]),
         ], sm=12, md=8),
         dbc.Col([
-            dcc.Markdown('Filter node data'),
             dbc.Badge("Minimum citation(s):", color="info", className="mr-1"),
             dbc.FormGroup([
                 dcc.Dropdown(
                     id='n_cites_dropdown',
                     options=[{'label': k, 'value': k} for k in range(21)],
-                    value=1,
+                    value=5,
                     style={'width': '50px'}
                 )
             ]),
@@ -211,9 +251,20 @@ body_layout = dbc.Container([
             ]),
         ], sm=12, md=4),
     ]),
-])
+    dbc.Row([
+        dcc.Markdown(
+            """
+            \* 'Commercial use subset' of the CORD-19 dataset from 
+            [Semantic Scholar](https://pages.semanticscholar.org/coronavirus-research)
+            used, downloaded on 2/Apr/2020.
+            
+            \* Data analysis carried out for demonstration of data visualisation purposes only.
+            """
+        )
+    ])
+], style={'marginTop': 20})
 
-app.layout = html.Div([body_layout])
+app.layout = html.Div([navbar, body_layout])
 
 
 @app.callback(
@@ -251,7 +302,7 @@ def display_nodedata(datalist):
             txt += '\n\nJournal: ' + data['journal'].title()
             txt += ', Published: ' + data['pub_date']
             txt += '\n\nAuthor(s): ' + str(data['authors'])
-            txt += '\n\nCitations: ' + str(data['n_cites'])
+            txt += 'Citations: ' + str(data['n_cites'])
 
     return txt
 
