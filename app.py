@@ -195,10 +195,13 @@ body_layout = dbc.Container([
             """
             -----
             ##### Filter / Explore node data
+            Each node's size indicates number of citations (from this collection), and color indicates the
+            main topic group that it belongs to.
+            
             Use these filters to highlight papers with:
             * certain numbers of citations by other papers in this collection, and
             * by journal of publication
-            Click 'Show citation connections' to see visualisations of citations, or to hide them for brevity
+            Click 'Show citation connections' to see visualisations of citations, or to hide them for simplicity.
             -----
             """),
     ]),
@@ -308,5 +311,5 @@ def display_nodedata(datalist):
 
 
 if __name__ == '__main__':
-    app.run_server(debug=True)
+    app.run_server(debug=False)
 
