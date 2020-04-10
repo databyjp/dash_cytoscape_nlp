@@ -198,7 +198,7 @@ for d in corpus:
 
 lda_df = pd.DataFrame(lda_vals)
 lda_arr = lda_df.values
-# for pplx in [20, 35, 50, 100, 200]:  # Test out different perplexity values
+
 lda_topics = {i[0]: i[1].split(' + ') for i in lda.print_topics(-1)}
 topics_txt = [lda_topics[i] for i in range(num_topics)]
 topics_txt = [[j.split('*')[1].replace('"', '') for j in i] for i in topics_txt]
@@ -210,15 +210,16 @@ lda_df = lda_df.assign(topics=['Topic: ' + str(lda_arr[i].argmax()) for i in ran
 lda_df = lda_df.assign(title=docs_titles)
 lda_df = lda_df.assign(filename=filenames)
 
-for pplx in [40]:  # Test out different perplexity values
+# for tsne_perp in [20, 35, 50, 100, 200]:  # Test out different perplexity values
+for tsne_perp in [40]:  # Test out different perplexity values
     tsne_embeds = TSNE(
-        n_components=2, perplexity=tsne_perp, n_iter=350, n_iter_without_progress=100, learning_rate=400
+        n_components=2, perplexity=tsne_perp, n_iter=350, n_iter_without_progress=100, learning_rate=500
     ).fit_transform(lda_arr)
     lda_df = pd.concat([lda_df, pd.DataFrame(tsne_embeds, columns=['x', 'y'])], axis=1)
 
     # Visualise the t-SNE topics
     topic_ids = 'Topic: ' + lda_df['topic_id'].astype(str).values
-    fig = px.scatter(lda_df, title='t-SNE test, perplexity: ' + str(pplx),
+    fig = px.scatter(lda_df, title='t-SNE test, perplexity: ' + str(tsne_perp),
                      x='x', y='y', color=topic_ids, color_discrete_sequence=px.colors.qualitative.Light24,
                      hover_name='title', hover_data=['topic_txt'], template='plotly_white')
     fig.show()

@@ -22,6 +22,7 @@ import dash_core_components as dcc
 from dash.dependencies import Input, Output
 from flask_caching import Cache
 from sklearn.manifold import TSNE
+import umap
 from copy import deepcopy
 import os
 import json
@@ -40,6 +41,8 @@ if not os.path.exists(cache_dir):
     os.mkdir(cache_dir)
 
 network_df = pd.read_csv('outputs/network_df.csv', index_col=0)
+network_df = pd.read_csv('outputs/network_df_sm.csv', index_col=0)
+
 network_df['citations'] = network_df['citations'].fillna('')
 network_df['cited_by'] = network_df['cited_by'].fillna('')
 network_df['topic_id'] = network_df['topic_id'].astype(str)
@@ -56,8 +59,8 @@ journal_ser = network_df.groupby('journal')['0'].count().sort_values(ascending=F
 top_journals = list(journal_ser.index[:5])
 
 
-def tsne_to_cyto(tsne_val):
-    scale_factor = 40
+def tsne_to_cyto(tsne_val, scale_factor=40):
+
     return int(scale_factor * (float(tsne_val)))
 
 
@@ -73,7 +76,7 @@ node_list = [
             'authors': network_df.iloc[i]['authors'],
             'cited_by': network_df.iloc[i]['cited_by'],
             'n_cites': network_df.iloc[i]['n_cites'],
-            'node_size': int(np.sqrt(1+network_df.iloc[i]['n_cites']) * 15),
+            'node_size': int(np.sqrt(1+network_df.iloc[i]['n_cites']) * 10),
             'highlight': network_df.iloc[i]['highlight'],
         },
         'position': {'x': tsne_to_cyto(network_df.iloc[i]['x']), 'y': tsne_to_cyto(network_df.iloc[i]['y'])},
@@ -84,33 +87,51 @@ node_list = [
 
 
 @cache.memoize()
-def get_tsne_locs(tsne_perp):
+def get_node_locs(dim_red_algo='tsne', tsne_perp=40):
 
-    tsne_embeds = TSNE(
-        n_components=2, perplexity=tsne_perp, n_iter=350, n_iter_without_progress=100, learning_rate=400
-    ).fit_transform(lda_val_arr)
-    x_list = tsne_embeds[:, 0]
-    y_list = tsne_embeds[:, 1]
+    logger.info(f'Starting dimensionality reduction, with {dim_red_algo}')
+
+    if dim_red_algo == 'tsne':
+        node_locs = TSNE(
+            n_components=2, perplexity=tsne_perp, n_iter=350, n_iter_without_progress=100, learning_rate=500
+        ).fit_transform(lda_val_arr)
+    elif dim_red_algo == 'umap':
+        reducer = umap.UMAP(n_components=2)
+        node_locs = reducer.fit_transform(lda_val_arr)
+    else:
+        logger.error(f'Dimensionality reduction algorithm {dim_red_algo} is not a valid choice! Something went wrong')
+        node_locs = np.zeros([len(network_df), 2])
+
+    logger.info('Finished dimensionality reduction')
+
+    x_list = node_locs[:, 0]
+    y_list = node_locs[:, 1]
 
     return x_list, y_list
 
 
 default_tsne = 40
-(x_list, y_list) = get_tsne_locs(default_tsne)
+(x_list, y_list) = get_node_locs(tsne_perp=default_tsne)
 
 
-def update_node_data(node_bools, tsne_perp):
+def update_node_data(node_bools, dim_red_algo, tsne_perp):
 
     node_list_in = deepcopy(node_list)
-    (x_list, y_list) = get_tsne_locs(tsne_perp)
+    (x_list, y_list) = get_node_locs(dim_red_algo, tsne_perp=tsne_perp)
+
+    x_range = max(x_list) - min(x_list)
+    y_range = max(y_list) - min(y_list)
+    print("Ranges: ", x_range, y_range)
+
+    scale_factor = int(4000 / (x_range + y_range))
 
     for i in range(len(network_df)):
         tempbool = node_bools[i]
         node_list_in[i]['data']['highlight'] = tempbool
         node_list_in[i]['selectable'] = False if tempbool == 0 else True
 
-        node_list_in[i]['position']['x'] = tsne_to_cyto(x_list[i])
-        node_list_in[i]['position']['y'] = tsne_to_cyto(y_list[i])
+        node_list_in[i]['position']['x'] = tsne_to_cyto(x_list[i], scale_factor)
+        node_list_in[i]['position']['y'] = tsne_to_cyto(y_list[i], scale_factor)
 
     return node_list_in
 
@@ -189,13 +210,13 @@ for topic_html in [html.Span([str(i) + ': ' + topics_txt[i]], style={'color': co
     topics_html.append(html.Br())
 
 body_layout = dbc.Container([
-    dbc.Row([
-        dcc.Markdown(
-            """
-            ### CORD-19 Data Explorer Dashboard
-            """
-        )
-    ]),
+    # dbc.Row([
+    #     dcc.Markdown(
+    #         """
+    #         ### CORD-19 Data Explorer Dashboard
+    #         """
+    #     )
+    # ]),
     dbc.Row([
         dbc.Col([
             dcc.Markdown(
@@ -227,13 +248,15 @@ body_layout = dbc.Container([
             """
             -----
             ##### Filter / Explore node data
-            Each node's size indicates number of citations (from this collection), and color indicates the
-            main topic group that it belongs to.
+            Node size indicates number of citations from this collection, and color indicates its
+            main topic group.
             
             Use these filters to highlight papers with:
-            * certain numbers of citations by other papers in this collection, and
-            * by journal of publication
-            Click 'Show citation connections' to see visualisations of citations, or to hide them for simplicity.
+            * certain numbers of citations from this collection, and
+            * by journal title
+            
+            Try showing or hiding citation connections with the toggle button, and explore different visualisation options.
+
             -----
             """),
     ]),
@@ -246,10 +269,11 @@ body_layout = dbc.Container([
                     style={'width': '100%', 'height': '400px'},
                     elements=elm_list,
                     stylesheet=def_stylesheet,
-                    minZoom=0.06)
+                    minZoom=0.06
+                )
             ]),
             dbc.Row([
-                dcc.Markdown(id='node-data', children='Click on a node to see its details here')
+                dbc.Alert(id='node-data', children='Click on a node to see its details here', color='secondary')
             ]),
         ], sm=12, md=8),
         dbc.Col([
@@ -274,16 +298,32 @@ body_layout = dbc.Container([
             ]),
             dbc.Badge("Citation network:", color="info", className="mr-1"),
             dbc.FormGroup([
-                dbc.Checkbox(
-                    id="show_edges_radio", className="form-check-input", checked=True,
-                ),
-                dbc.Label(
-                    "Show citation connections",
-                    html_for="show_edges_radio",
-                    className="form-check-label",
-                ),
+                dbc.Container([
+                    dbc.Checkbox(
+                        id="show_edges_radio", className="form-check-input", checked=True,
+                    ),
+                    dbc.Label(
+                        "Show citation connections",
+                        html_for="show_edges_radio",
+                        className="form-check-label",
+                        style={'color': 'DarkSlateGray', 'fontSize': 12},
+                    ),
+                ])
             ]),
-            dbc.Badge("Current t-SNE perplexity: 40 (min: 10, max:100)", color="info", className="mr-1", id='tsne_label'),
+            dbc.Badge("Dimensionality reduction algorithm", color="info", className="mr-1"),
+            dbc.FormGroup([
+                dcc.RadioItems(
+                    id='dim_red_algo',
+                    options=[
+                        {'label': 'UMAP', 'value': 'umap'},
+                        {'label': 't-SNE', 'value': 'tsne'},
+                    ],
+                    value='tsne',
+                    labelStyle={'display': 'inline-block', 'color': 'DarkSlateGray', 'fontSize': 12, "margin-right": "10px"}
+                )
+            ]),
+            dbc.Badge("t-SNE parameters (not applicable to UMAP):", color="info", className="mr-1"),
+            dbc.Container("Current perplexity: 40 (min: 10, max:100)", id='tsne_para', style={'color': 'DarkSlateGray', 'fontSize': 12}),
             dbc.FormGroup([
                 dcc.Slider(
                     id='tsne_perp',
@@ -305,19 +345,20 @@ body_layout = dbc.Container([
             """
             \* 'Commercial use subset' of the CORD-19 dataset from 
             [Semantic Scholar](https://pages.semanticscholar.org/coronavirus-research)
-            used, downloaded on 2/Apr/2020.
+            used, downloaded on 2/Apr/2020. The displayed nodes exclude papers that do not
+            cite and are not cited by others in this set.
             
             \* Data analysis carried out for demonstration of data visualisation purposes only.
             """
         )
-    ])
+    ], style={'fontSize': 11, 'color': 'gray'})
 ], style={'marginTop': 20})
 
 app.layout = html.Div([navbar, body_layout])
 
 
 @app.callback(
-    dash.dependencies.Output('tsne_label', 'children'),
+    dash.dependencies.Output('tsne_para', 'children'),
     [dash.dependencies.Input('tsne_perp', 'value')])
 def update_output(value):
     return f'Current t-SNE perplexity: {value} (min: 10, max:100)'
@@ -326,11 +367,11 @@ def update_output(value):
 @app.callback(
     Output('core_19_cytoscape', 'elements'),
     [Input('n_cites_dropdown', 'value'), Input('journals_dropdown', 'value'),
-     Input('show_edges_radio', 'checked'), Input('tsne_perp', 'value')]
+     Input('show_edges_radio', 'checked'), Input('dim_red_algo', 'value'), Input('tsne_perp', 'value')]
 )
-def filter_nodes(usr_min_cites, usr_journals_list, show_edges, tsne_perp):
+def filter_nodes(usr_min_cites, usr_journals_list, show_edges, dim_red_algo, tsne_perp):
     node_bools = filter_node_data(min_conns=usr_min_cites, journals=usr_journals_list, date_filter=None)
-    node_list = update_node_data(node_bools, tsne_perp)
+    node_list = update_node_data(node_bools, dim_red_algo, tsne_perp)
     conn_list = []
 
     if show_edges:
@@ -345,17 +386,16 @@ def filter_nodes(usr_min_cites, usr_journals_list, show_edges, tsne_perp):
               [Input('core_19_cytoscape', 'selectedNodeData')])
 def display_nodedata(datalist):
 
-    txt = 'Click on a node to see its details here'
+    contents = 'Click on a node to see its details here'
     if datalist is not None:
         if len(datalist) > 0:
             data = datalist[-1]
-            txt = '##### Title: ' + data['title'].title()
-            txt += '\n\nJournal: ' + data['journal'].title()
-            txt += ', Published: ' + data['pub_date']
-            txt += '\n\nAuthor(s): ' + str(data['authors'])
-            txt += 'Citations: ' + str(data['n_cites'])
+            contents = []
+            contents.append(html.H5('Title: ' + data['title'].title()))
+            contents.append(html.P('Journal: ' + data['journal'].title() + ', Published: ' + data['pub_date']))
+            contents.append(html.P('Author(s): ' + str(data['authors']) + 'Citations: ' + str(data['n_cites'])))
 
-    return txt
+    return contents
 
 
 if __name__ == '__main__':
