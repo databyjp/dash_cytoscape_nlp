@@ -13,20 +13,38 @@ root_logger.addHandler(sh)
 
 import pandas as pd
 import numpy as np
+import plotly.express as px
 import dash
 import dash_cytoscape as cyto
 import dash_html_components as html
 import dash_bootstrap_components as dbc
 import dash_core_components as dcc
 from dash.dependencies import Input, Output
+from flask_caching import Cache
+from sklearn.manifold import TSNE
 from copy import deepcopy
+import os
 import json
-import plotly.express as px
+
+app = dash.Dash(__name__, external_stylesheets=[dbc.themes.BOOTSTRAP])
+
+server = app.server
+
+cache_dir = './cache'
+cache = Cache(app.server, config={
+    # try 'filesystem' if you don't want to setup redis
+    'CACHE_TYPE': 'filesystem',
+    'CACHE_DIR': cache_dir,
+})
+if not os.path.exists(cache_dir):
+    os.mkdir(cache_dir)
 
 network_df = pd.read_csv('outputs/network_df.csv', index_col=0)
 network_df['citations'] = network_df['citations'].fillna('')
 network_df['cited_by'] = network_df['cited_by'].fillna('')
 network_df['topic_id'] = network_df['topic_id'].astype(str)
+topic_ids = [str(i) for i in range(len(network_df['topic_id'].unique()))]
+lda_val_arr = network_df[topic_ids].values
 
 with open('outputs/lda_topics.json', 'r') as f:
     lda_topics = json.load(f)
@@ -58,20 +76,41 @@ node_list = [
             'node_size': int(np.sqrt(1+network_df.iloc[i]['n_cites']) * 15),
             'highlight': network_df.iloc[i]['highlight'],
         },
-        'position': {'x': tsne_to_cyto(network_df.iloc[i]['y']), 'y': tsne_to_cyto(network_df.iloc[i]['x'])},
+        'position': {'x': tsne_to_cyto(network_df.iloc[i]['x']), 'y': tsne_to_cyto(network_df.iloc[i]['y'])},
         'classes': network_df.iloc[i]['topic_id'],
         'selectable': True,
-        'locked': True
+        'grabbable': False
     } for i in range(len(network_df))]
 
 
-def update_node_data(node_bools):
+@cache.memoize()
+def get_tsne_locs(tsne_perp):
+
+    tsne_embeds = TSNE(
+        n_components=2, perplexity=tsne_perp, n_iter=350, n_iter_without_progress=100, learning_rate=400
+    ).fit_transform(lda_val_arr)
+    x_list = tsne_embeds[:, 0]
+    y_list = tsne_embeds[:, 1]
+
+    return x_list, y_list
+
+
+default_tsne = 40
+(x_list, y_list) = get_tsne_locs(default_tsne)
+
+
+def update_node_data(node_bools, tsne_perp):
 
     node_list_in = deepcopy(node_list)
+    (x_list, y_list) = get_tsne_locs(tsne_perp)
+
     for i in range(len(network_df)):
         tempbool = node_bools[i]
         node_list_in[i]['data']['highlight'] = tempbool
         node_list_in[i]['selectable'] = False if tempbool == 0 else True
+
+        node_list_in[i]['position']['x'] = tsne_to_cyto(x_list[i])
+        node_list_in[i]['position']['y'] = tsne_to_cyto(y_list[i])
 
     return node_list_in
 
@@ -118,18 +157,11 @@ def filter_node_data(min_conns=5, journals=[], date_filter=None):
 
 
 elm_list = node_list
-# conn_list = draw_edges()
-# elm_list += conn_list
-
-app = dash.Dash(__name__, external_stylesheets=[dbc.themes.BOOTSTRAP])
-
-server = app.server
 
 col_swatch = px.colors.qualitative.Dark24
 def_stylesheet = [
     {
         'selector': '.' + str(i),
-        # 'style': {'background-color': col_swatch[i]},
         'style': {'background-color': col_swatch[i], 'line-color': col_swatch[i]}
     } for i in range(len(network_df['topic_id'].unique()))
 ]
@@ -214,8 +246,7 @@ body_layout = dbc.Container([
                     style={'width': '100%', 'height': '400px'},
                     elements=elm_list,
                     stylesheet=def_stylesheet,
-                    minZoom=0.06,
-                )
+                    minZoom=0.06)
             ]),
             dbc.Row([
                 dcc.Markdown(id='node-data', children='Click on a node to see its details here')
@@ -241,16 +272,31 @@ body_layout = dbc.Container([
                     style={'width': '100%'}
                 ),
             ]),
-            # dbc.Badge("Show citation connections:", color="info", className="mr-1"),
+            dbc.Badge("Citation network:", color="info", className="mr-1"),
             dbc.FormGroup([
                 dbc.Checkbox(
-                    id="show_edges_radio", className="form-check-input", checked=False,
+                    id="show_edges_radio", className="form-check-input", checked=True,
                 ),
                 dbc.Label(
                     "Show citation connections",
                     html_for="show_edges_radio",
                     className="form-check-label",
                 ),
+            ]),
+            dbc.Badge("Current t-SNE perplexity: 40 (min: 10, max:100)", color="info", className="mr-1", id='tsne_label'),
+            dbc.FormGroup([
+                dcc.Slider(
+                    id='tsne_perp',
+                    min=10,
+                    max=100,
+                    step=1,
+                    marks={
+                        10: '10',
+                        100: '100',
+                    },
+                    value=40
+                ),
+                # html.Div(id='slider-output')
             ]),
         ], sm=12, md=4),
     ]),
@@ -271,20 +317,24 @@ app.layout = html.Div([navbar, body_layout])
 
 
 @app.callback(
-    Output('core_19_cytoscape', 'elements'),
-    [Input('n_cites_dropdown', 'value'), Input('journals_dropdown', 'value'), Input('show_edges_radio', 'checked')]
-)
-def filter_nodes(usr_min_cites, usr_journals_list, show_edges):
+    dash.dependencies.Output('tsne_label', 'children'),
+    [dash.dependencies.Input('tsne_perp', 'value')])
+def update_output(value):
+    return f'Current t-SNE perplexity: {value} (min: 10, max:100)'
 
+
+@app.callback(
+    Output('core_19_cytoscape', 'elements'),
+    [Input('n_cites_dropdown', 'value'), Input('journals_dropdown', 'value'),
+     Input('show_edges_radio', 'checked'), Input('tsne_perp', 'value')]
+)
+def filter_nodes(usr_min_cites, usr_journals_list, show_edges, tsne_perp):
     node_bools = filter_node_data(min_conns=usr_min_cites, journals=usr_journals_list, date_filter=None)
-    node_list = update_node_data(node_bools)
+    node_list = update_node_data(node_bools, tsne_perp)
     conn_list = []
 
     if show_edges:
         conn_list = draw_edges(node_bools)
-    #     elm_list = node_list + conn_list
-    # else:
-    #     elm_list = node_list
 
     elm_list = node_list + conn_list
 
@@ -295,10 +345,8 @@ def filter_nodes(usr_min_cites, usr_journals_list, show_edges):
               [Input('core_19_cytoscape', 'selectedNodeData')])
 def display_nodedata(datalist):
 
-    print(datalist)
     txt = 'Click on a node to see its details here'
     if datalist is not None:
-        print(len(datalist))
         if len(datalist) > 0:
             data = datalist[-1]
             txt = '##### Title: ' + data['title'].title()
@@ -311,5 +359,5 @@ def display_nodedata(datalist):
 
 
 if __name__ == '__main__':
-    app.run_server(debug=False)
+    app.run_server(debug=True)
 
