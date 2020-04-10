@@ -121,7 +121,7 @@ def update_node_data(node_bools, dim_red_algo, tsne_perp):
 
     x_range = max(x_list) - min(x_list)
     y_range = max(y_list) - min(y_list)
-    print("Ranges: ", x_range, y_range)
+    # print("Ranges: ", x_range, y_range)
 
     scale_factor = int(4000 / (x_range + y_range))
 
