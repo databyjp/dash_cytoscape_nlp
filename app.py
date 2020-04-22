@@ -86,14 +86,14 @@ node_list = [
     } for i in range(len(network_df))]
 
 
-@cache.memoize()
+@cache.memoize()  # Caching node location results where they remain identical, as they are time consuming to calculate
 def get_node_locs(dim_red_algo='tsne', tsne_perp=40):
 
     logger.info(f'Starting dimensionality reduction, with {dim_red_algo}')
 
     if dim_red_algo == 'tsne':
         node_locs = TSNE(
-            n_components=2, perplexity=tsne_perp, n_iter=350, n_iter_without_progress=100, learning_rate=500
+            n_components=2, perplexity=tsne_perp, n_iter=350, n_iter_without_progress=100, learning_rate=500, random_state=42,
         ).fit_transform(lda_val_arr)
     elif dim_red_algo == 'umap':
         reducer = umap.UMAP(n_components=2)
@@ -210,13 +210,6 @@ for topic_html in [html.Span([str(i) + ': ' + topics_txt[i]], style={'color': co
     topics_html.append(html.Br())
 
 body_layout = dbc.Container([
-    # dbc.Row([
-    #     dcc.Markdown(
-    #         """
-    #         ### CORD-19 Data Explorer Dashboard
-    #         """
-    #     )
-    # ]),
     dbc.Row([
         dbc.Col([
             dcc.Markdown(
@@ -393,11 +386,11 @@ def display_nodedata(datalist):
             contents = []
             contents.append(html.H5('Title: ' + data['title'].title()))
             contents.append(html.P('Journal: ' + data['journal'].title() + ', Published: ' + data['pub_date']))
-            contents.append(html.P('Author(s): ' + str(data['authors']) + 'Citations: ' + str(data['n_cites'])))
+            contents.append(html.P('Author(s): ' + str(data['authors']) + ', Citations: ' + str(data['n_cites'])))
 
     return contents
 
 
 if __name__ == '__main__':
-    app.run_server(debug=True)
+    app.run_server(debug=False)
 

@@ -213,7 +213,7 @@ lda_df = lda_df.assign(filename=filenames)
 # for tsne_perp in [20, 35, 50, 100, 200]:  # Test out different perplexity values
 for tsne_perp in [40]:  # Test out different perplexity values
     tsne_embeds = TSNE(
-        n_components=2, perplexity=tsne_perp, n_iter=350, n_iter_without_progress=100, learning_rate=500
+        n_components=2, perplexity=tsne_perp, n_iter=350, n_iter_without_progress=100, learning_rate=500, random_state=42,
     ).fit_transform(lda_arr)
     lda_df = pd.concat([lda_df, pd.DataFrame(tsne_embeds, columns=['x', 'y'])], axis=1)
 
