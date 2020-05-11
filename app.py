@@ -36,6 +36,7 @@ cache = Cache(app.server, config={
     # try 'filesystem' if you don't want to setup redis
     'CACHE_TYPE': 'filesystem',
     'CACHE_DIR': cache_dir,
+    'CACHE_THRESHOLD': 50  # To limit cache size
 })
 if not os.path.exists(cache_dir):
     os.mkdir(cache_dir)
@@ -93,7 +94,7 @@ def get_node_locs(dim_red_algo='tsne', tsne_perp=40):
 
     if dim_red_algo == 'tsne':
         node_locs = TSNE(
-            n_components=2, perplexity=tsne_perp, n_iter=350, n_iter_without_progress=100, learning_rate=500, random_state=42,
+            n_components=2, perplexity=tsne_perp, n_iter=250, n_iter_without_progress=50, learning_rate=500, random_state=42,
         ).fit_transform(lda_val_arr)
     elif dim_red_algo == 'umap':
         reducer = umap.UMAP(n_components=2)
@@ -392,5 +393,5 @@ def display_nodedata(datalist):
 
 
 if __name__ == '__main__':
-    app.run_server(debug=False)
+    app.run_server(debug=True)
 
