@@ -31,24 +31,24 @@ app = dash.Dash(__name__, external_stylesheets=[dbc.themes.BOOTSTRAP])
 
 server = app.server
 
-cache_dir = './cache'
-cache = Cache(app.server, config={
-    # try 'filesystem' if you don't want to setup redis
-    'CACHE_TYPE': 'filesystem',
-    'CACHE_DIR': cache_dir,
-    'CACHE_THRESHOLD': 50  # To limit cache size
-})
-if not os.path.exists(cache_dir):
-    os.mkdir(cache_dir)
+CACHE_CONFIG = {
+    'CACHE_TYPE': 'redis',
+    'CACHE_REDIS_URL': os.environ.get('REDIS_URL', 'redis://localhost:6379'),
+    'CACHE_DEFAULT_TIMEOUT': 300,
+    'CACHE_THRESHOLD': 100  # To limit cache size
+}
+cache = Cache()
+cache.init_app(app.server, config=CACHE_CONFIG)
 
-network_df = pd.read_csv('outputs/network_df.csv', index_col=0)
-network_df = pd.read_csv('outputs/network_df_sm.csv', index_col=0)
+# network_df = pd.read_csv('outputs/network_df.csv', index_col=0)  # ~8300 nodes
+network_df = pd.read_csv('outputs/network_df_sm.csv', index_col=0)  # ~4700 nodes
 
+# Prep data / fill NAs
 network_df['citations'] = network_df['citations'].fillna('')
 network_df['cited_by'] = network_df['cited_by'].fillna('')
 network_df['topic_id'] = network_df['topic_id'].astype(str)
 topic_ids = [str(i) for i in range(len(network_df['topic_id'].unique()))]
-lda_val_arr = network_df[topic_ids].values
+# lda_val_arr = network_df[topic_ids].values
 
 with open('outputs/lda_topics.json', 'r') as f:
     lda_topics = json.load(f)
@@ -66,42 +66,48 @@ def tsne_to_cyto(tsne_val, scale_factor=40):
 
 
 network_df = network_df.assign(highlight=1)
-node_list = [
-    {
-        'data': {
-            'id': str(i),
-            'label': str(i),
-            'title': network_df.iloc[i]['title'],
-            'journal': network_df.iloc[i]['journal'],
-            'pub_date': network_df.iloc[i]['pub_date'],
-            'authors': network_df.iloc[i]['authors'],
-            'cited_by': network_df.iloc[i]['cited_by'],
-            'n_cites': network_df.iloc[i]['n_cites'],
-            'node_size': int(np.sqrt(1+network_df.iloc[i]['n_cites']) * 10),
-            'highlight': network_df.iloc[i]['highlight'],
-        },
-        'position': {'x': tsne_to_cyto(network_df.iloc[i]['x']), 'y': tsne_to_cyto(network_df.iloc[i]['y'])},
-        'classes': network_df.iloc[i]['topic_id'],
-        'selectable': True,
-        'grabbable': False
-    } for i in range(len(network_df))]
+
+
+def get_node_list(in_df=network_df):  # Convert DF data to node list for cytoscape
+    return [
+        {
+            'data': {
+                'id': str(i),
+                'label': str(i),
+                'title': row['title'],
+                'journal': row['journal'],
+                'pub_date': row['pub_date'],
+                'authors': row['authors'],
+                'cited_by': row['cited_by'],
+                'n_cites': row['n_cites'],
+                'node_size': int(np.sqrt(1+row['n_cites']) * 10),
+                'highlight': row['highlight'],
+            },
+            'position': {'x': tsne_to_cyto(row['x']), 'y': tsne_to_cyto(row['y'])},
+            'classes': row['topic_id'],
+            'selectable': True,
+            'grabbable': False
+        } for i, row in in_df.iterrows()]
+
+
+node_list = get_node_list()
 
 
 @cache.memoize()  # Caching node location results where they remain identical, as they are time consuming to calculate
-def get_node_locs(dim_red_algo='tsne', tsne_perp=40):
+def get_node_locs(in_df, dim_red_algo='tsne', tsne_perp=40):
 
     logger.info(f'Starting dimensionality reduction, with {dim_red_algo}')
 
     if dim_red_algo == 'tsne':
         node_locs = TSNE(
-            n_components=2, perplexity=tsne_perp, n_iter=250, n_iter_without_progress=50, learning_rate=500, random_state=42,
-        ).fit_transform(lda_val_arr)
+            n_components=2, perplexity=tsne_perp, n_iter=600, n_iter_without_progress=200, learning_rate=50, random_state=42,
+        ).fit_transform(in_df[topic_ids].values)
     elif dim_red_algo == 'umap':
         reducer = umap.UMAP(n_components=2)
-        node_locs = reducer.fit_transform(lda_val_arr)
+        node_locs = reducer.fit_transform(in_df[topic_ids].values)
     else:
         logger.error(f'Dimensionality reduction algorithm {dim_red_algo} is not a valid choice! Something went wrong')
-        node_locs = np.zeros([len(network_df), 2])
+        node_locs = np.zeros([len(in_df), 2])
 
     logger.info('Finished dimensionality reduction')
 
@@ -112,13 +118,13 @@ def get_node_locs(dim_red_algo='tsne', tsne_perp=40):
 
 
 default_tsne = 40
-(x_list, y_list) = get_node_locs(tsne_perp=default_tsne)
+# (x_list, y_list) = get_node_locs(network_df, tsne_perp=default_tsne)
 
 
-def update_node_data(node_bools, dim_red_algo, tsne_perp):
+def update_node_data(node_bools, dim_red_algo, tsne_perp, node_list_in=node_list, in_df=network_df):
 
-    node_list_in = deepcopy(node_list)
-    (x_list, y_list) = get_node_locs(dim_red_algo, tsne_perp=tsne_perp)
+    # node_list_in = deepcopy(node_list)
+    (x_list, y_list) = get_node_locs(in_df, dim_red_algo, tsne_perp=tsne_perp)
 
     x_range = max(x_list) - min(x_list)
     y_range = max(y_list) - min(y_list)
@@ -126,7 +132,7 @@ def update_node_data(node_bools, dim_red_algo, tsne_perp):
 
     scale_factor = int(4000 / (x_range + y_range))
 
-    for i in range(len(network_df)):
+    for i in range(len(in_df)):
         tempbool = node_bools[i]
         node_list_in[i]['data']['highlight'] = tempbool
         node_list_in[i]['selectable'] = False if tempbool == 0 else True
@@ -137,25 +143,26 @@ def update_node_data(node_bools, dim_red_algo, tsne_perp):
     return node_list_in
 
 
-def draw_edges(node_bools=[]):
+def draw_edges(in_df=network_df):
 
     conn_list_out = list()
 
-    for i, row in network_df.iterrows():
-        if node_bools[i] == 1:
-            citations = row['cited_by']
-            if len(citations) == 0:
-                citations_list = []
-            else:
-                citations_list = citations.split(',')
+    for i, row in in_df.iterrows():
+        citations = row['cited_by']
 
-            for cit in citations_list:
+        if len(citations) == 0:
+            citations_list = []
+        else:
+            citations_list = citations.split(',')
+
+        for cit in citations_list:
+            if int(cit) in in_df.index:
                 tgt_topic = row['topic_id']
                 temp_dict = {
                     'data': {'source': cit, 'target': str(i)},
                     'classes': tgt_topic,
                     'tgt_topic': tgt_topic,
-                    'src_topic': network_df.iloc[int(i)]['topic_id'],
+                    'src_topic': in_df.loc[int(cit), 'topic_id'],
                     'locked': True
                 }
                 conn_list_out.append(temp_dict)
@@ -163,16 +170,16 @@ def draw_edges(node_bools=[]):
     return conn_list_out
 
 
-def filter_node_data(min_conns=5, journals=[], date_filter=None):
-    # TODO - explore making this faster
-    node_bools = np.array([1] * len(network_df))
+def filter_node_data(in_df=network_df, min_conns=5, journals=[], date_filter=None):
+
+    node_bools = np.ones(len(network_df))
 
     if min_conns is not None:
-        highlight_bools = network_df.n_cites.apply(lambda x: 1 * (x >= min_conns)).values
+        highlight_bools = in_df.n_cites.apply(lambda x: 1 * (x >= min_conns)).values
         node_bools *= highlight_bools
 
     if len(journals) != 0:
-        journals_bools = network_df.journal.apply(lambda x: 1 * (x in journals)).values
+        journals_bools = in_df.journal.apply(lambda x: 1 * (x in journals)).values
         node_bools *= journals_bools
 
     return node_bools
@@ -276,7 +283,7 @@ body_layout = dbc.Container([
                 dcc.Dropdown(
                     id='n_cites_dropdown',
                     options=[{'label': k, 'value': k} for k in range(21)],
-                    value=5,
+                    value=1,
                     style={'width': '50px'}
                 )
             ]),
@@ -360,18 +367,33 @@ def update_output(value):
 
 @app.callback(
     Output('core_19_cytoscape', 'elements'),
-    [Input('n_cites_dropdown', 'value'), Input('journals_dropdown', 'value'),
-     Input('show_edges_radio', 'checked'), Input('dim_red_algo', 'value'), Input('tsne_perp', 'value')]
+    [Input('n_cites_dropdown', 'value'),
+     Input('journals_dropdown', 'value'),
+     Input('show_edges_radio', 'checked'),
+     Input('dim_red_algo', 'value'),
+     Input('tsne_perp', 'value')]
 )
 def filter_nodes(usr_min_cites, usr_journals_list, show_edges, dim_red_algo, tsne_perp):
-    node_bools = filter_node_data(min_conns=usr_min_cites, journals=usr_journals_list, date_filter=None)
-    node_list = update_node_data(node_bools, dim_red_algo, tsne_perp)
+    # # Previous logic:
+    # # Get node booleans based on filter
+    # # Update node data by turning them on / off
+    # node_bools = filter_node_data(min_conns=usr_min_cites, journals=usr_journals_list, date_filter=None)
+    # node_list = update_node_data(node_bools, dim_red_algo, tsne_perp)
+
+    # New logic:
+    # Update base DF based on filter (all nodes are 'on')
+    # Generate node list
+    cur_df = network_df[(network_df.n_cites >= usr_min_cites) & (network_df.journal.isin(usr_journals_list))]
+    cur_node_list = get_node_list(cur_df)
+    node_bools = np.ones(len(cur_df))
+    cur_node_list = update_node_data(node_bools, dim_red_algo, tsne_perp, node_list_in=cur_node_list, in_df=cur_df)
+    len(node_bools)
     conn_list = []
 
     if show_edges:
-        conn_list = draw_edges(node_bools)
+        conn_list = draw_edges(cur_df)
 
-    elm_list = node_list + conn_list
+    elm_list = cur_node_list + conn_list
 
     return elm_list
 
