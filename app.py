@@ -170,21 +170,6 @@ def draw_edges(in_df=network_df):
     return conn_list_out
 
 
-def filter_node_data(in_df=network_df, min_conns=5, journals=[], date_filter=None):
-
-    node_bools = np.ones(len(network_df))
-
-    if min_conns is not None:
-        highlight_bools = in_df.n_cites.apply(lambda x: 1 * (x >= min_conns)).values
-        node_bools *= highlight_bools
-
-    if len(journals) != 0:
-        journals_bools = in_df.journal.apply(lambda x: 1 * (x in journals)).values
-        node_bools *= journals_bools
-
-    return node_bools
-
-
 elm_list = node_list
 
 col_swatch = px.colors.qualitative.Dark24
@@ -383,7 +368,10 @@ def filter_nodes(usr_min_cites, usr_journals_list, show_edges, dim_red_algo, tsn
     # New logic:
     # Update base DF based on filter (all nodes are 'on')
     # Generate node list
-    cur_df = network_df[(network_df.n_cites >= usr_min_cites) & (network_df.journal.isin(usr_journals_list))]
+    cur_df = network_df[(network_df.n_cites >= usr_min_cites)]
+    if usr_journals_list != None and usr_journals_list != []:
+        cur_df = cur_df[(cur_df.journal.isin(usr_journals_list))]
+
     cur_node_list = get_node_list(cur_df)
     node_bools = np.ones(len(cur_df))
     cur_node_list = update_node_data(node_bools, dim_red_algo, tsne_perp, node_list_in=cur_node_list, in_df=cur_df)
