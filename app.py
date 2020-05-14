@@ -31,17 +31,17 @@ app = dash.Dash(__name__, external_stylesheets=[dbc.themes.BOOTSTRAP])
 
 server = app.server
 
-cache_dir = './cache'
-if not os.path.exists(cache_dir):
-    os.mkdir(cache_dir)
-
-cache = Cache(app.server, config={
-    # try 'filesystem' if you don't want to setup redis
-    'CACHE_TYPE': 'filesystem',
-    'CACHE_DIR': cache_dir,
-    'CACHE_DEFAULT_TIMEOUT': 300,
-    'CACHE_THRESHOLD': 100  # To limit cache size
-})
+# cache_dir = './cache'
+# if not os.path.exists(cache_dir):
+#     os.mkdir(cache_dir)
+#
+# cache = Cache(app.server, config={
+#     # try 'filesystem' if you don't want to setup redis
+#     'CACHE_TYPE': 'filesystem',
+#     'CACHE_DIR': cache_dir,
+#     'CACHE_DEFAULT_TIMEOUT': 300,
+#     'CACHE_THRESHOLD': 100  # To limit cache size
+# })
 
 # network_df = pd.read_csv('outputs/network_df.csv', index_col=0)  # ~8300 nodes
 network_df = pd.read_csv('outputs/network_df_sm.csv', index_col=0)  # ~4700 nodes
@@ -96,7 +96,7 @@ def get_node_list(in_df=network_df):  # Convert DF data to node list for cytosca
 node_list = get_node_list()
 
 
-@cache.memoize()  # Caching node location results where they remain identical, as they are time consuming to calculate
+# @cache.memoize()  # Caching node location results where they remain identical, as they are time consuming to calculate
 def get_node_locs(in_df, dim_red_algo='tsne', tsne_perp=40):
 
     logger.info(f'Starting dimensionality reduction, with {dim_red_algo}')
@@ -270,7 +270,7 @@ body_layout = dbc.Container([
             dbc.FormGroup([
                 dcc.Dropdown(
                     id='n_cites_dropdown',
-                    options=[{'label': k, 'value': k} for k in range(21)],
+                    options=[{'label': k, 'value': k} for k in range(1, 21)],
                     clearable=False,
                     value=3,
                     style={'width': '50px'}
