@@ -60,7 +60,7 @@ topics_txt = [[j.split('*')[1].replace('"', '') for j in i] for i in topics_txt]
 topics_txt = ['; '.join(i) for i in topics_txt]
 
 journal_ser = network_df.groupby('journal')['0'].count().sort_values(ascending=False)
-top_journals = list(journal_ser.index[:4])
+top_journals = list(journal_ser.index[:3])
 
 
 def tsne_to_cyto(tsne_val, scale_factor=40):
@@ -272,7 +272,7 @@ body_layout = dbc.Container([
                     id='n_cites_dropdown',
                     options=[{'label': k, 'value': k} for k in range(21)],
                     clearable=False,
-                    value=2,
+                    value=3,
                     style={'width': '50px'}
                 )
             ]),
