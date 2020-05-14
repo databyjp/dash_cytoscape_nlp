@@ -96,7 +96,7 @@ def get_node_list(in_df=network_df):  # Convert DF data to node list for cytosca
 node_list = get_node_list()
 
 
-@cache.memoize()  # Caching node location results where they remain identical, as they are time consuming to calculate
+# @cache.memoize()  # Caching node location results where they remain identical, as they are time consuming to calculate
 def get_node_locs(in_df, dim_red_algo='tsne', tsne_perp=40):
 
     logger.info(f'Starting dimensionality reduction, with {dim_red_algo}')
