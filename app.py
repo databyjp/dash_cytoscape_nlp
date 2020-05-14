@@ -31,18 +31,6 @@ app = dash.Dash(__name__, external_stylesheets=[dbc.themes.BOOTSTRAP])
 
 server = app.server
 
-# cache_dir = './cache'
-# if not os.path.exists(cache_dir):
-#     os.mkdir(cache_dir)
-#
-# cache = Cache(app.server, config={
-#     # try 'filesystem' if you don't want to setup redis
-#     'CACHE_TYPE': 'filesystem',
-#     'CACHE_DIR': cache_dir,
-#     'CACHE_DEFAULT_TIMEOUT': 300,
-#     'CACHE_THRESHOLD': 100  # To limit cache size
-# })
-
 # network_df = pd.read_csv('outputs/network_df.csv', index_col=0)  # ~8300 nodes
 network_df = pd.read_csv('outputs/network_df_sm.csv', index_col=0)  # ~4700 nodes
 
@@ -96,14 +84,13 @@ def get_node_list(in_df=network_df):  # Convert DF data to node list for cytosca
 node_list = get_node_list()
 
 
-# @cache.memoize()  # Caching node location results where they remain identical, as they are time consuming to calculate
 def get_node_locs(in_df, dim_red_algo='tsne', tsne_perp=40):
 
     logger.info(f'Starting dimensionality reduction, with {dim_red_algo}')
 
     if dim_red_algo == 'tsne':
         node_locs = TSNE(
-            n_components=2, perplexity=tsne_perp, n_iter=600, n_iter_without_progress=200, learning_rate=50, random_state=42,
+            n_components=2, perplexity=tsne_perp, n_iter=500, n_iter_without_progress=100, learning_rate=200, random_state=42,
         ).fit_transform(in_df[topic_ids].values)
     elif dim_red_algo == 'umap':
         reducer = umap.UMAP(n_components=2)
@@ -121,7 +108,6 @@ def get_node_locs(in_df, dim_red_algo='tsne', tsne_perp=40):
 
 
 default_tsne = 40
-# (x_list, y_list) = get_node_locs(network_df, tsne_perp=default_tsne)
 
 
 def update_node_data(node_bools, dim_red_algo, tsne_perp, node_list_in=node_list, in_df=network_df):
@@ -363,13 +349,6 @@ def update_output(value):
      Input('tsne_perp', 'value')]
 )
 def filter_nodes(usr_min_cites, usr_journals_list, show_edges, dim_red_algo, tsne_perp):
-    # # Previous logic:
-    # # Get node booleans based on filter
-    # # Update node data by turning them on / off
-    # node_bools = filter_node_data(min_conns=usr_min_cites, journals=usr_journals_list, date_filter=None)
-    # node_list = update_node_data(node_bools, dim_red_algo, tsne_perp)
-
-    # New logic:
     # Update base DF based on filter (all nodes are 'on')
     # Generate node list
     cur_df = network_df[(network_df.n_cites >= usr_min_cites)]
