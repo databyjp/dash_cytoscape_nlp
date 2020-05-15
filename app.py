@@ -95,9 +95,6 @@ def get_node_list(in_df=network_df):  # Convert DF data to node list for cytosca
     ]
 
 
-node_list = get_node_list()
-
-
 # @cache.memoize()  # Caching node location results where they remain identical, as they are time consuming to calculate
 def get_node_locs(in_df, dim_red_algo="tsne", tsne_perp=40):
     logger.info(f"Starting dimensionality reduction on {len(in_df)} nodes, with {dim_red_algo}")
@@ -135,7 +132,7 @@ default_tsne = 40
 
 
 def update_node_data(
-        node_bools, dim_red_algo, tsne_perp, node_list_in=node_list, in_df=network_df
+        node_bools, dim_red_algo, tsne_perp, node_list_in, in_df=network_df
 ):
     # node_list_in = deepcopy(node_list)
     (x_list, y_list) = get_node_locs(in_df, dim_red_algo, tsne_perp=tsne_perp)
@@ -183,7 +180,7 @@ def draw_edges(in_df=network_df):
     return conn_list_out
 
 
-elm_list = node_list
+elm_list = []
 
 col_swatch = px.colors.qualitative.Dark24
 def_stylesheet = [
