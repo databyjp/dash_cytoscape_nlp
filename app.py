@@ -296,7 +296,7 @@ body_layout = dbc.Container(
                                 dcc.Dropdown(
                                     id="n_cites_dropdown",
                                     options=[
-                                        {"label": k, "value": k} for k in range(1, 21)
+                                        {"label": k, "value": k} for k in range(2, 21)
                                     ],
                                     clearable=False,
                                     value=startup_n_cites,

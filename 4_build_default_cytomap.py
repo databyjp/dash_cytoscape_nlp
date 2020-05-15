@@ -136,7 +136,7 @@ def draw_edges(in_df=network_df):
     return conn_list_out
 
 
-min_n_cites = 1
+min_n_cites = 2
 top_journals = list(journal_ser.index)[:3]
 
 startup_elms = dict(
