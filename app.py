@@ -61,7 +61,7 @@ topics_txt = [[j.split("*")[1].replace('"', "") for j in i] for i in topics_txt]
 topics_txt = ["; ".join(i) for i in topics_txt]
 
 journal_ser = network_df.groupby("journal")["0"].count().sort_values(ascending=False)
-top_journals = list(journal_ser.index[:4])
+top_journals = list(journal_ser.index[:5])
 
 
 def tsne_to_cyto(tsne_val, scale_factor=40):
@@ -100,7 +100,7 @@ node_list = get_node_list()
 
 # @cache.memoize()  # Caching node location results where they remain identical, as they are time consuming to calculate
 def get_node_locs(in_df, dim_red_algo="tsne", tsne_perp=40):
-    logger.info(f"Starting dimensionality reduction, with {dim_red_algo}")
+    logger.info(f"Starting dimensionality reduction on {len(in_df)} nodes, with {dim_red_algo}")
 
     if dim_red_algo == "tsne":
         node_locs = TSNE(
@@ -324,7 +324,7 @@ body_layout = dbc.Container(
                                         {"label": k, "value": k} for k in range(1, 21)
                                     ],
                                     clearable=False,
-                                    value=2,
+                                    value=5,
                                     style={"width": "50px"},
                                 )
                             ]
