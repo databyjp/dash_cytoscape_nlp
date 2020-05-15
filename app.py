@@ -90,7 +90,7 @@ def get_node_locs(in_df, dim_red_algo='tsne', tsne_perp=40):
 
     if dim_red_algo == 'tsne':
         node_locs = TSNE(
-            n_components=2, perplexity=tsne_perp, n_iter=500, n_iter_without_progress=100, learning_rate=200, random_state=42,
+            n_components=2, perplexity=tsne_perp, n_iter=250, n_iter_without_progress=100, learning_rate=200, random_state=42,
         ).fit_transform(in_df[topic_ids].values)
     elif dim_red_algo == 'umap':
         reducer = umap.UMAP(n_components=2)
