@@ -107,8 +107,8 @@ def get_node_locs(in_df, dim_red_algo="tsne", tsne_perp=40):
             n_components=2,
             perplexity=tsne_perp,
             n_iter=600,
-            n_iter_without_progress=200,
-            learning_rate=50,
+            n_iter_without_progress=50,
+            learning_rate=200,
             random_state=42,
         ).fit_transform(in_df[topic_ids].values)
     elif dim_red_algo == "umap":
