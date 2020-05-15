@@ -45,8 +45,8 @@ topics_txt = [[j.split("*")[1].replace('"', "") for j in i] for i in topics_txt]
 topics_txt = ["; ".join(i) for i in topics_txt]
 
 journal_ser = network_df.groupby("journal")["0"].count().sort_values(ascending=False)
-top_journals = list(journal_ser.index[:3])
-def_n_cites = 3
+top_journals = list(journal_ser.index[:2])
+def_n_cites = 4
 
 
 def tsne_to_cyto(tsne_val, scale_factor=40):
