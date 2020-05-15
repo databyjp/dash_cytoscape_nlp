@@ -20,29 +20,13 @@ import dash_html_components as html
 import dash_bootstrap_components as dbc
 import dash_core_components as dcc
 from dash.dependencies import Input, Output
-from flask_caching import Cache
 from sklearn.manifold import TSNE
 import umap
-from copy import deepcopy
-import os
 import json
 
 app = dash.Dash(__name__, external_stylesheets=[dbc.themes.BOOTSTRAP])
 
 server = app.server
-#
-# cache_dir = "./cache"
-# if not os.path.exists(cache_dir):
-#     os.mkdir(cache_dir)
-#
-# cache = Cache(
-#     app.server,
-#     config={
-#         # try 'filesystem' if you don't want to setup redis
-#         "CACHE_TYPE": "redis",
-#         "CACHE_REDIS_URL": os.environ.get("REDIS_URL", ""),
-#     },
-# )
 
 # network_df = pd.read_csv('outputs/network_df.csv', index_col=0)  # ~8300 nodes
 network_df = pd.read_csv("outputs/network_df_sm.csv", index_col=0)  # ~4700 nodes
@@ -62,13 +46,11 @@ topics_txt = ["; ".join(i) for i in topics_txt]
 
 journal_ser = network_df.groupby("journal")["0"].count().sort_values(ascending=False)
 top_journals = list(journal_ser.index[:3])
+def_n_cites = 4
 
 
 def tsne_to_cyto(tsne_val, scale_factor=40):
     return int(scale_factor * (float(tsne_val)))
-
-
-network_df = network_df.assign(highlight=1)
 
 
 def get_node_list(in_df=network_df):  # Convert DF data to node list for cytoscape
@@ -84,7 +66,6 @@ def get_node_list(in_df=network_df):  # Convert DF data to node list for cytosca
                 "cited_by": row["cited_by"],
                 "n_cites": row["n_cites"],
                 "node_size": int(np.sqrt(1 + row["n_cites"]) * 10),
-                "highlight": row["highlight"],
             },
             "position": {"x": tsne_to_cyto(row["x"]), "y": tsne_to_cyto(row["y"])},
             "classes": row["topic_id"],
@@ -95,7 +76,14 @@ def get_node_list(in_df=network_df):  # Convert DF data to node list for cytosca
     ]
 
 
-# @cache.memoize()  # Caching node location results where they remain identical, as they are time consuming to calculate
+node_list = get_node_list(
+    network_df[
+        (network_df.n_cites > def_n_cites)
+        & (network_df.journal.isin(top_journals))
+    ]
+)
+
+
 def get_node_locs(in_df, dim_red_algo="tsne", tsne_perp=40):
     logger.info(f"Starting dimensionality reduction on {len(in_df)} nodes, with {dim_red_algo}")
 
@@ -128,13 +116,7 @@ def get_node_locs(in_df, dim_red_algo="tsne", tsne_perp=40):
 default_tsne = 40
 
 
-# (x_list, y_list) = get_node_locs(network_df, tsne_perp=default_tsne)
-
-
-def update_node_data(
-        node_bools, dim_red_algo, tsne_perp, node_list_in, in_df=network_df
-):
-    # node_list_in = deepcopy(node_list)
+def update_node_data(dim_red_algo, tsne_perp, node_list_in, in_df):
     (x_list, y_list) = get_node_locs(in_df, dim_red_algo, tsne_perp=tsne_perp)
 
     x_range = max(x_list) - min(x_list)
@@ -144,10 +126,6 @@ def update_node_data(
     scale_factor = int(4000 / (x_range + y_range))
 
     for i in range(len(in_df)):
-        tempbool = node_bools[i]
-        node_list_in[i]["data"]["highlight"] = tempbool
-        node_list_in[i]["selectable"] = False if tempbool == 0 else True
-
         node_list_in[i]["position"]["x"] = tsne_to_cyto(x_list[i], scale_factor)
         node_list_in[i]["position"]["y"] = tsne_to_cyto(y_list[i], scale_factor)
 
@@ -180,7 +158,7 @@ def draw_edges(in_df=network_df):
     return conn_list_out
 
 
-elm_list = []
+elm_list = node_list
 
 col_swatch = px.colors.qualitative.Dark24
 def_stylesheet = [
@@ -195,7 +173,6 @@ def_stylesheet += [
         "selector": "node",
         "style": {"width": "data(node_size)", "height": "data(node_size)"},
     },
-    {"selector": "node[highlight = 0]", "style": {"background-opacity": 0.15}},
     {"selector": "edge", "style": {"width": 1, "curve-style": "bezier"}},
 ]
 
@@ -321,7 +298,7 @@ body_layout = dbc.Container(
                                         {"label": k, "value": k} for k in range(1, 21)
                                     ],
                                     clearable=False,
-                                    value=3,
+                                    value=def_n_cites,
                                     style={"width": "50px"},
                                 )
                             ]
@@ -465,12 +442,6 @@ def update_output(value):
     ],
 )
 def filter_nodes(usr_min_cites, usr_journals_list, show_edges, dim_red_algo, tsne_perp):
-    # # Previous logic:
-    # # Get node booleans based on filter
-    # # Update node data by turning them on / off
-    # node_bools = filter_node_data(min_conns=usr_min_cites, journals=usr_journals_list, date_filter=None)
-    # node_list = update_node_data(node_bools, dim_red_algo, tsne_perp)
-
     # New logic:
     # Update base DF based on filter (all nodes are 'on')
     # Generate node list
@@ -479,11 +450,9 @@ def filter_nodes(usr_min_cites, usr_journals_list, show_edges, dim_red_algo, tsn
         cur_df = cur_df[(cur_df.journal.isin(usr_journals_list))]
 
     cur_node_list = get_node_list(cur_df)
-    node_bools = np.ones(len(cur_df))
     cur_node_list = update_node_data(
-        node_bools, dim_red_algo, tsne_perp, node_list_in=cur_node_list, in_df=cur_df
+        dim_red_algo, tsne_perp, node_list_in=cur_node_list, in_df=cur_df
     )
-    len(node_bools)
     conn_list = []
 
     if show_edges:
